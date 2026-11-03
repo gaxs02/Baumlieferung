@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>🎄 Baum-Lieferungen</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" onerror="this.onerror=function(){this.href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'};this.href='https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'">
+<style>
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;font:14px/1.35 system-ui,-apple-system,sans-serif;background:#eef2ee;color:#1c1c1c}
+#app{display:grid;grid-template-columns:min(450px,42vw) 1fr;height:100vh}
+#side{overflow:auto;padding:8px 10px}
+#map{height:100%;min-height:260px}
+#map.pick,#map.pick .leaflet-grab{cursor:crosshair}
+h1{font-size:18px;margin:4px 0 6px}
+#stats span{display:inline-block;padding:2px 9px;border-radius:12px;color:#fff;margin:2px 4px 2px 0;font-size:12px}
+details{background:#fff;border-radius:8px;margin:8px 0;box-shadow:0 1px 3px #0002}
+summary{padding:10px;font-weight:600;cursor:pointer}
+.in{padding:0 10px 10px}
+input,select,textarea,button{font:inherit;padding:7px 8px;border:1px solid #b5b5b5;border-radius:6px;max-width:100%}
+input,select,textarea{width:100%;background:#fff}
+input[type=checkbox]{width:auto}
+button{background:#fff;cursor:pointer}
+button.p{background:#14532d;color:#fff;border-color:#14532d}
+button.d{color:#b91c1c}
+button:disabled{opacity:.4;cursor:default}
+button.s{padding:3px 8px;font-size:12px}
+.row{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+.row>input,.row>select{flex:1;min-width:120px;width:auto}
+.g{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.w{grid-column:1/-1}
+label{display:block;font-size:12px;color:#555}
+label.ck{display:inline-flex;gap:6px;align-items:center;font-size:14px;color:#111}
+.mut{color:#666;font-size:12px}
+.err{color:#b91c1c;font-size:12px;margin:4px 0}
+.warn{background:#fef3c7;border:1px solid #f59e0b;border-radius:6px;padding:6px 8px;margin:6px 0;font-size:12px}
+.it{border:1px solid #ddd;border-radius:6px;padding:7px 9px;margin:6px 0;background:#fafafa}
+.it .top{display:flex;justify-content:space-between;gap:6px;align-items:center}
+.it select{width:auto}
+#tList{padding-left:22px;margin:6px 0}
+#tList li{margin:6px 0}
+.mk{width:28px;height:28px;border-radius:50%;color:#fff;font:700 11px/24px system-ui;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px #0007}
+.mk.t{border:3px solid #111;line-height:22px}
+.mk.st{background:#7c3aed;font-size:15px;width:32px;height:32px;line-height:28px}
+.pp{display:flex;flex-direction:column;gap:5px;margin-top:6px}
+#pick{position:fixed;left:8px;right:8px;bottom:8px;z-index:2000;background:#111;color:#fff;padding:10px;border-radius:8px;display:flex;gap:10px;align-items:center;justify-content:space-between}
+#toast{position:fixed;top:10px;left:50%;transform:translateX(-50%);max-width:92vw;z-index:3000;background:#14532d;color:#fff;padding:9px 14px;border-radius:8px;box-shadow:0 2px 8px #0005}
+#toast.bad{background:#b91c1c}
+@media(max-width:820px){
+ #app{display:flex;flex-direction:column;height:auto}
+ #map{order:-1;height:44vh;flex:none;position:sticky;top:0;z-index:500}
+ #side{overflow:visible}
+ details{scroll-margin-top:46vh}
+}
+</style>
+</head>
+<body>
+<div id="app">
+<aside id="side">
+ <h1>🎄 Baum-Lieferungen</h1>
+ <div id="stats"></div>
+
+ <details open id="dS"><summary>🏁 Verkaufsstand (Startpunkt)</summary><div class="in">
+  <div class="row"><input id="sAddr" placeholder="Straße Nr., PLZ Ort"><button data-act="sGeo">Suchen</button></div>
+  <div class="row"><button data-act="sPick">📍 Auf Karte klicken</button></div>
+  <p id="sInfo" class="mut"></p>
+ </div></details>
+
+ <details open id="dF"><summary id="fTitle">➕ Neue Bestellung</summary><div class="in">
+  <form id="f" novalidate>
+   <div class="g">
+    <label class="w">Name*<input id="fName" autocomplete="off"></label>
+    <label>Telefon<input id="fPhone" type="tel"></label>
+    <label>Anzahl Bäume* (1–50)<input id="fTrees" type="number" min="1" max="50" value="1" inputmode="numeric"></label>
+    <label class="w">Straße + Hausnr.*<input id="fStreet" autocomplete="off"></label>
+    <label>PLZ*<input id="fPlz" inputmode="numeric" maxlength="5"></label>
+    <label>Ort*<input id="fCity"></label>
+    <label>Tag*<select id="fDay"><option value="Sa">Samstag</option><option value="So">Sonntag</option></select></label>
+    <label>Wunschzeit<input id="fTime" placeholder="z. B. ab 14 Uhr"></label>
+    <label class="w">Notiz<textarea id="fNote" rows="2"></textarea></label>
+   </div>
+   <p id="fMsg" class="err"></p>
+   <div class="row"><button class="p" id="fOk">Speichern</button><button type="button" id="fCancel" data-act="cancel" hidden>Abbrechen</button></div>
+  </form>
+ </div></details>
+
+ <details open id="dT"><summary>🚚 Tour</summary><div class="in">
+  <div id="tSum"></div>
+  <div class="row"><label class="ck"><input type="checkbox" id="tRet" checked> Rückkehr zum Stand</label></div>
+  <input id="tDrv" placeholder="Fahrername">
+  <div class="row"><button class="p" data-act="opt">Route optimieren</button><button data-act="tStart">Tour starten</button></div>
+  <div class="row"><button data-act="gm">Google Maps</button><button data-act="share">Teilen</button><button class="d" data-act="tClear">Tour leeren</button></div>
+  <div id="tWarn" class="warn" hidden></div>
+  <ol id="tList"></ol>
+ </div></details>
+
+ <details open id="dL"><summary>📋 Bestellungen</summary><div class="in">
+  <div class="row">
+   <select id="qSt"><option value="open">Offen (ohne Ausgeliefert)</option><option value="all">Alle</option>
+    <option>Vor Ort</option><option>In Auslieferung</option><option>Ausgeliefert</option><option>Problem</option></select>
+   <select id="qDay"><option value="">Beide Tage</option><option value="Sa">Samstag</option><option value="So">Sonntag</option></select>
+  </div>
+  <input id="qTxt" type="search" placeholder="Suche: Name, Adresse, Fahrer, Nr.">
+  <div id="list"></div>
+ </div></details>
+
+ <details id="dD"><summary>💾 Daten</summary><div class="in">
+  <div class="row"><button data-act="exp">Export (JSON)</button><button data-act="imp">Import (JSON)</button><input type="file" id="impF" accept=".json,application/json" hidden></div>
+  <div class="row"><button class="d" data-act="clr">Alle Bestellungen löschen</button></div>
+  <p class="mut">Daten liegen nur in diesem Browser (localStorage). Regelmäßig exportieren!</p>
+ </div></details>
+</aside>
+<div id="map"></div>
+</div>
+<div id="pick" hidden><span id="pickTxt"></span><button data-act="pcancel">Abbrechen</button></div>
+<div id="toast" hidden></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>if(typeof L==='undefined')document.write('<script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"><\/script>')</script>
+<script>if(typeof L==='undefined')document.write('<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"><\/script>')</script>
+<script>
+'use strict';
+/* ========== Constants & helpers ========== */
+const ST = ['Vor Ort', 'In Auslieferung', 'Ausgeliefert', 'Problem'];
+const COL = {'Vor Ort':'#2563eb','In Auslieferung':'#f59e0b','Ausgeliefert':'#16a34a','Problem':'#dc2626'};
+const KEY = 'xmasTours.v1';
+const OSRM = 'https://router.project-osrm.org';
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Escape all user-provided text before it goes into innerHTML
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtDur = s => { const m = Math.round(s / 60); return m >= 60 ? Math.floor(m / 60) + ' Std ' + String(m % 60).padStart(2, '0') + ' Min' : m + ' Min'; };
+const fmtDT = iso => { const d = new Date(iso); return isNaN(d) ? '' : d.toLocaleString('de-DE', {weekday:'short', hour:'2-digit', minute:'2-digit'}); };
+function toast(msg, bad) {
+  const t = $('#toast'); t.textContent = msg; t.className = bad ? 'bad' : ''; t.hidden = false;
+  clearTimeout(toast.t); toast.t = setTimeout(() => { t.hidden = true; }, 5500);
+}
+
+/* ========== State, validation, persistence ========== */
+const blank = () => ({start:null, orders:[], next:1, last:{plz:'', city:''}, tour:{ids:[], ret:true, driver:''}});
+const okLL = (a, b) => Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180;
+
+// Validate/sanitize one order; returns null if unusable
+function cleanOrder(o) {
+  if (!o || typeof o !== 'object') return null;
+  const t = (v, n = 300) => typeof v === 'string' ? v.trim().slice(0, n) : '';
+  const no = Number(o.no), tr = Number(o.trees);
+  const r = {
+    no: Number.isInteger(no) && no > 0 ? no : 0,
+    name: t(o.name), phone: t(o.phone, 50), street: t(o.street), plz: t(o.plz, 5), city: t(o.city),
+    trees: Number.isInteger(tr) && tr >= 1 && tr <= 50 ? tr : 0,
+    day: o.day === 'Sa' || o.day === 'So' ? o.day : '',
+    time: t(o.time, 100), note: t(o.note, 1000),
+    status: ST.includes(o.status) ? o.status : '',
+    driver: t(o.driver, 100),
+    doneAt: typeof o.doneAt === 'string' && !isNaN(new Date(o.doneAt)) ? o.doneAt : null,
+    lat: null, lng: null
+  };
+  if (okLL(o.lat, o.lng)) { r.lat = o.lat; r.lng = o.lng; }
+  return r.no && r.name && r.street && r.plz && r.city && r.trees && r.day && r.status ? r : null;
+}
+// Validate a whole state/import file; throws on unusable input
+function normalize(j) {
+  if (!j || typeof j !== 'object' || !Array.isArray(j.orders)) throw new Error('Keine gültige Bestelldatei.');
+  const s = blank(), list = j.orders.map(cleanOrder).filter(Boolean);
+  const dropped = j.orders.length - list.length;
+  let max = Math.max(0, ...list.map(o => o.no)); const seen = new Set();
+  list.forEach(o => { if (seen.has(o.no)) o.no = ++max; seen.add(o.no); });
+  s.orders = list;
+  s.next = Math.max(max + 1, Number.isInteger(j.next) ? j.next : 0);
+  if (j.start && okLL(j.start.lat, j.start.lng)) s.start = {lat:j.start.lat, lng:j.start.lng, label:String(j.start.label || '').slice(0, 200)};
+  if (j.last && typeof j.last === 'object') s.last = {plz:String(j.last.plz || '').slice(0, 5), city:String(j.last.city || '').slice(0, 100)};
+  const t = j.tour && typeof j.tour === 'object' ? j.tour : {};
+  const open = new Set(list.filter(o => o.status !== 'Ausgeliefert').map(o => o.no));
+  s.tour.ids = Array.isArray(t.ids) ? [...new Set(t.ids)].filter(n => open.has(n)) : [];
+  s.tour.ret = t.ret !== false;
+  s.tour.driver = String(t.driver || '').slice(0, 100);
+  return {s, dropped};
+}
+function load() {
+  try { const raw = localStorage.getItem(KEY); if (raw) return normalize(JSON.parse(raw)).s; } catch (e) { /* ignore broken data */ }
+  return blank();
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(S)); } catch (e) { toast('Speichern im Browser nicht möglich (Speicher voll/blockiert). Bitte exportieren!', true); }
+}
+
+let S = load();                 // persisted state
+let R = {geom:null, dashed:false, km:null, sec:null, msg:'', busy:false}; // current route (not persisted)
+let editId = null, pick = null, routeSeq = 0, tmr = null, MK = {};
+const find = no => S.orders.find(o => o.no === no);
+
+/* ========== Network: fetch with timeout, geocoding ========== */
+async function getJSON(url, ms = 9000) {
+  const c = new AbortController(), t = setTimeout(() => c.abort(), ms);
+  try {
+    const r = await fetch(url, {signal:c.signal});
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return await r.json();
+  } finally { clearTimeout(t); }
+}
+let lastGeo = 0, geoQ = Promise.resolve();
+// Queue geocoding calls: max 1 request per 1.1 s (Nominatim policy)
+function geocode(q) { const p = geoQ.then(() => doGeo(q)); geoQ = p.catch(() => {}); return p; }
+async function doGeo(q) {
+  const w = lastGeo + 1100 - Date.now(); if (w > 0) await sleep(w);
+  lastGeo = Date.now();
+  const enc = encodeURIComponent(q); let failed = 0;
+  try {
+    const a = await getJSON(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&countrycodes=de&q=${enc}`);
+    if (Array.isArray(a) && a[0] && okLL(+a[0].lat, +a[0].lon)) return {lat:+a[0].lat, lng:+a[0].lon};
+  } catch (e) { failed++; }
+  try { // fallback: Photon (coordinates are [lon, lat])
+    const p = await getJSON(`https://photon.komoot.io/api/?limit=1&lang=de&q=${enc}`);
+    const c = p && p.features && p.features[0] && p.features[0].geometry && p.features[0].geometry.coordinates;
+    if (c && okLL(+c[1], +c[0])) return {lat:+c[1], lng:+c[0]};
+  } catch (e) { failed++; }
+  if (failed === 2) throw new Error('Geocoding-Dienste nicht erreichbar');
+  return null;
+}
+
+/* ========== Map setup ========== */
+let map = null, gM, gS, gR;
+if (typeof L !== 'undefined') {
+  map = L.map('map').setView(S.start ? [S.start.lat, S.start.lng] : [50.7753, 6.0839], 12);
+  // Base maps (all key-free). tile.openstreetmap.org blocks requests without Referer (page opened as file://)
+  // and CARTO now needs an API key, so OSM is only the default when the page is served via http(s).
+  const web = typeof location !== 'undefined' && /^https?:$/.test(location.protocol);
+  const TILES = [
+    [web ? 'OpenStreetMap' : 'OpenStreetMap (nur über http/https)', 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', {maxZoom:19, attribution:'© OpenStreetMap-Mitwirkende'}],
+    ['Esri Straßenkarte', 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {maxZoom:19, attribution:'Kacheln © Esri, OpenStreetMap-Mitwirkende'}],
+    ['OSM Frankreich', 'https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {subdomains:'abc', maxZoom:19, attribution:'© OpenStreetMap-Mitwirkende, Kacheln: OSM France'}],
+    ['OpenTopoMap', 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {subdomains:'abc', maxZoom:17, attribution:'© OpenStreetMap-Mitwirkende, SRTM | © OpenTopoMap (CC-BY-SA)'}]
+  ];
+  if (!web) TILES.push(TILES.shift()); // local file: OSM goes last, Esri becomes default
+  const tl = TILES.map(t => L.tileLayer(t[1], t[2]));
+  let ti = 0, tErr = 0, tOk = 0;
+  const useTiles = i => { if (tl[ti] && map.hasLayer(tl[ti])) map.removeLayer(tl[ti]); ti = i; tErr = 0; tOk = 0; tl[i].addTo(map); };
+  tl.forEach((l, i) => {
+    l.on('tileload', () => { if (i === ti) tOk++; });
+    l.on('tileerror', () => { // switch automatically if the current provider delivers nothing
+      if (i === ti && !tOk && ++tErr === 4 && ti < tl.length - 1) { toast('Kartenanbieter nicht erreichbar: wechsle zu „' + TILES[ti + 1][0] + '“.', true); useTiles(ti + 1); }
+    });
+  });
+  const bl = {}; TILES.forEach((t, i) => { bl[t[0]] = tl[i]; });
+  L.control.layers(bl, null, {collapsed:true}).addTo(map);
+  map.on('baselayerchange', e => { ti = Math.max(0, tl.indexOf(e.layer)); tErr = 0; tOk = 0; });
+  useTiles(0);
+  gR = L.layerGroup().addTo(map); gM = L.layerGroup().addTo(map); gS = L.layerGroup().addTo(map);
+  map.on('click', e => {
+    if (!pick) return;
+    const {lat, lng} = e.latlng, p = pick; setPick(null);
+    if (p.t === 's') return setStart(lat, lng, `Karte (${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+    const o = find(p.no); if (o) { o.lat = lat; o.lng = lng; afterPos(o); toast(`#${o.no}: Position gespeichert.`); }
+  });
+  window.addEventListener('resize', () => map.invalidateSize());
+} else {
+  $('#map').innerHTML = '<div class="err" style="padding:12px"><b>Die Kartenbibliothek (Leaflet) konnte nicht geladen werden.</b><br>Liste, Bestellungen und Daten funktionieren weiter, nur Karte und Routen fehlen.<br>Häufige Ursachen: Datei in einer Vorschau geöffnet (Dateien-App, Mail, Chat), Inhaltsblocker/VPN, oder Hosting ohne Zugriff auf cdnjs.cloudflare.com, cdn.jsdelivr.net und unpkg.com. Bitte die Seite in Safari/Chrome über eine https-Adresse öffnen und neu laden.</div>';
+}
+
+/* ========== Geometry & route heuristic (fallback) ========== */
+const hav = (a, b) => { const r = Math.PI / 180, dl = (b.lat - a.lat) * r, dn = (b.lng - a.lng) * r;
+  const x = Math.sin(dl / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dn / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
+// Path length in km; closed = add way back to first point
+function plen(p, closed) { let s = 0; for (let i = 1; i < p.length; i++) s += hav(p[i - 1], p[i]); return closed && p.length > 1 ? s + hav(p[p.length - 1], p[0]) : s; }
+// Nearest neighbour + 2-opt, start point stays fixed; returns stops only
+function heuristic(start, list, closed) {
+  const rest = list.slice(); let p = [start];
+  while (rest.length) {
+    const l = p[p.length - 1]; let bi = 0;
+    rest.forEach((o, i) => { if (hav(l, o) < hav(l, rest[bi])) bi = i; });
+    p.push(rest.splice(bi, 1)[0]);
+  }
+  let imp = true, guard = 0;
+  while (imp && guard++ < 50) {
+    imp = false;
+    for (let i = 1; i < p.length - 1; i++) for (let j = i + 1; j < p.length; j++) {
+      const q = p.slice(0, i).concat(p.slice(i, j + 1).reverse(), p.slice(j + 1));
+      if (plen(q, closed) < plen(p, closed) - 1e-9) { p = q; imp = true; }
+    }
+  }
+  return p.slice(1);
+}
+
+/* ========== Tour logic ========== */
+const stops = () => S.tour.ids.map(find).filter(o => o && o.lat != null);
+const P = o => o.lat + ',' + o.lng;
+function gmaps() { // Google Maps directions URL for the whole tour
+  const st = stops(); if (!S.start || !st.length) return null;
+  const dest = S.tour.ret ? S.start : st[st.length - 1], wp = S.tour.ret ? st : st.slice(0, -1);
+  return 'https://www.google.com/maps/dir/?api=1&travelmode=driving&origin=' + P(S.start) + '&destination=' + P(dest) + (wp.length ? '&waypoints=' + wp.map(P).join('%7C') : '');
+}
+const navUrl = o => 'https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=' + (o.lat != null ? P(o) : encodeURIComponent(`${o.street}, ${o.plz} ${o.city}`));
+
+// Recalculate route after a short delay (debounced); invalidates running requests
+function schedule() {
+  clearTimeout(tmr); routeSeq++;
+  R = {geom:null, dashed:false, km:null, sec:null, msg:'', busy:S.tour.ids.length > 0};
+  tmr = setTimeout(() => routeTour(false), 600); render();
+}
+async function routeTour(opt) {
+  clearTimeout(tmr);
+  const seq = ++routeSeq, st = stops(), ret = S.tour.ret, ll = p => p.lng + ',' + p.lat;
+  R = {geom:null, dashed:false, km:null, sec:null, msg:'', busy:false};
+  if (!st.length) { // explain WHY there is nothing to route
+    if (opt) {
+      const noPos = S.orders.filter(o => o.lat == null && o.status !== 'Ausgeliefert').length;
+      toast(S.tour.ids.length
+        ? 'Die Stopps der Tour haben keine Position. In der Liste „🔍 Neu suchen“ oder „📍 Position setzen“ nutzen.'
+        : 'Die Tour ist leer. Bestellungen per Checkbox in der Liste oder im Karten-Popup auswählen.' +
+          (noPos ? ` ${noPos} Bestellung(en) haben noch keine Position (⚠ in der Liste) und sind erst nach „Neu suchen“ oder „Position setzen“ wählbar.` : ''), true);
+    }
+    return render();
+  }
+  if (!S.start) { R.msg = 'Bitte zuerst den Startpunkt setzen.'; return render(); }
+  R.busy = true; renderTour();
+  let order = st, res;
+  try {
+    if (opt && st.length > 1) { // OSRM trip service: optimal order on real roads
+      const j = await getJSON(`${OSRM}/trip/v1/driving/${[S.start, ...st].map(ll).join(';')}?roundtrip=${ret}&source=first${ret ? '' : '&destination=any'}&overview=full&geometries=geojson`, 15000);
+      if (seq !== routeSeq) return;
+      if (j.code !== 'Ok' || !j.trips || !j.trips[0]) throw new Error(j.code);
+      order = st.map((o, i) => [o, j.waypoints[i + 1].waypoint_index]).sort((a, b) => a[1] - b[1]).map(x => x[0]);
+      res = j.trips[0];
+    } else { // plain route in the given order
+      const pts = [S.start, ...order]; if (ret) pts.push(S.start);
+      const j = await getJSON(`${OSRM}/route/v1/driving/${pts.map(ll).join(';')}?overview=full&geometries=geojson`, 15000);
+      if (seq !== routeSeq) return;
+      if (j.code !== 'Ok' || !j.routes || !j.routes[0]) throw new Error(j.code);
+      res = j.routes[0];
+    }
+    R.geom = res.geometry.coordinates.map(c => [c[1], c[0]]); R.km = res.distance / 1000; R.sec = res.duration;
+  } catch (e) { // fallback: straight lines, dashed
+    if (seq !== routeSeq) return;
+    if (opt && st.length > 1) order = heuristic(S.start, st, ret);
+    const pts = [S.start, ...order]; if (ret) pts.push(S.start);
+    R.geom = pts.map(p => [p.lat, p.lng]); R.dashed = true; R.km = plen(pts, false); R.sec = R.km * 1.3 / 40 * 3600;
+    R.msg = 'Routing-Dienst nicht erreichbar: Luftlinie (gestrichelt), Werte geschätzt.';
+  }
+  R.busy = false;
+  if (opt) S.tour.ids = order.map(o => o.no).concat(S.tour.ids.filter(n => !order.some(o => o.no === n)));
+  save(); render();
+  if (opt && map && R.geom.length > 1) map.fitBounds(R.geom, {padding:[30, 30]});
+}
+function tourToggle(no, on) {
+  const i = S.tour.ids.indexOf(no), o = find(no);
+  if (on && (!o || o.lat == null || o.status === 'Ausgeliefert')) { render(); return toast('Nur Bestellungen mit Position, die noch nicht ausgeliefert sind.', true); }
+  if (on && i < 0) S.tour.ids.push(no); if (!on && i >= 0) S.tour.ids.splice(i, 1);
+  save(); schedule();
+}
+function move(no, d) {
+  const i = S.tour.ids.indexOf(no), j = i + d; if (i < 0 || j < 0 || j >= S.tour.ids.length) return;
+  [S.tour.ids[i], S.tour.ids[j]] = [S.tour.ids[j], S.tour.ids[i]]; save(); schedule();
+}
+function setStatus(no, s) {
+  const o = find(no); if (!o || !ST.includes(s)) return;
+  o.status = s; o.doneAt = s === 'Ausgeliefert' ? new Date().toISOString() : null;
+  const i = S.tour.ids.indexOf(no);
+  if (s === 'Ausgeliefert' && i >= 0) { S.tour.ids.splice(i, 1); save(); schedule(); } else { save(); render(); }
+}
+function tourStart() {
+  const d = $('#tDrv').value.trim(), st = stops();
+  if (!st.length) return toast('Keine Stopps in der Tour.', true);
+  if (!d) return toast('Bitte Fahrername eintragen.', true);
+  st.forEach(o => { o.status = 'In Auslieferung'; o.driver = d; o.doneAt = null; });
+  S.tour.driver = d; save(); render(); toast(`Tour gestartet: ${st.length} Stopps auf „In Auslieferung“.`);
+}
+function openGm() {
+  const u = gmaps(); if (!u) return toast('Startpunkt und mindestens ein Stopp mit Position nötig.', true);
+  if (S.tour.ids.length - (S.tour.ret ? 0 : 1) > 9) toast('Mehr als 9 Zwischenstopps: Google Maps nimmt evtl. nicht alle an.', true);
+  window.open(u, '_blank', 'noopener');
+}
+async function share() {
+  const u = gmaps(); if (!u) return toast('Startpunkt und mindestens ein Stopp mit Position nötig.', true);
+  try {
+    if (navigator.share) { await navigator.share({title:'Lieferroute', text:'Lieferroute Weihnachtsbäume', url:u}); return; }
+    await navigator.clipboard.writeText(u); toast('Link in die Zwischenablage kopiert.');
+  } catch (e) { if (e && e.name === 'AbortError') return; prompt('Link zum Kopieren:', u); }
+}
+
+/* ========== Start point & positions ========== */
+function setStart(lat, lng, label) {
+  S.start = {lat, lng, label}; save(); if (map) map.setView([lat, lng], 14);
+  if (S.tour.ids.length) schedule(); else render();
+}
+async function startGeo() {
+  const q = $('#sAddr').value.trim(); if (!q) return toast('Bitte eine Adresse eingeben.', true);
+  try {
+    const p = await geocode(q + ', Deutschland');
+    if (!p) return toast('Adresse nicht gefunden: bitte „Auf Karte klicken“ nutzen.', true);
+    setStart(p.lat, p.lng, q);
+  } catch (e) { toast(e.message + ' – bitte „Auf Karte klicken“ nutzen.', true); }
+}
+function setPick(p) {
+  pick = p; $('#pick').hidden = !p; $('#map').classList.toggle('pick', !!p);
+  if (p) $('#pickTxt').textContent = p.t === 's' ? 'Auf die Karte tippen: Verkaufsstand setzen.' : `Auf die Karte tippen: Position für Bestellung #${p.no}.`;
+}
+function afterPos(o) { save(); if (S.tour.ids.includes(o.no)) schedule(); else render(); }
+async function geoOrder(o) {
+  try {
+    const p = await geocode(`${o.street}, ${o.plz} ${o.city}, Deutschland`);
+    if (p) { o.lat = p.lat; o.lng = p.lng; afterPos(o); if (map) map.setView([p.lat, p.lng], Math.max(map.getZoom(), 14)); toast(`#${o.no}: Adresse gefunden.`); }
+    else { toast(`#${o.no}: Adresse nicht gefunden. Bitte Position auf der Karte anklicken.`, true); setPick({t:'o', no:o.no}); }
+  } catch (e) { toast(`#${o.no}: ${e.message}. Position per Kartenklick setzen oder später „Neu suchen“.`, true); }
+}
+
+/* ========== Orders: form, edit, delete ========== */
+function resetForm() {
+  editId = null;
+  ['#fName', '#fPhone', '#fStreet', '#fTime', '#fNote'].forEach(s => { $(s).value = ''; });
+  $('#fTrees').value = 1; $('#fPlz').value = S.last.plz; $('#fCity').value = S.last.city; $('#fMsg').textContent = '';
+  $('#fTitle').textContent = '➕ Neue Bestellung'; $('#fOk').textContent = 'Speichern'; $('#fCancel').hidden = true;
+}
+function submitOrder(e) {
+  e.preventDefault();
+  const v = {name:$('#fName').value.trim(), phone:$('#fPhone').value.trim(), street:$('#fStreet').value.trim(), plz:$('#fPlz').value.trim(),
+    city:$('#fCity').value.trim(), trees:Number($('#fTrees').value), day:$('#fDay').value, time:$('#fTime').value.trim(), note:$('#fNote').value.trim()};
+  const m = [];
+  if (!v.name) m.push('Name');
+  if (!v.street || !/\d/.test(v.street)) m.push('Straße + Hausnummer');
+  if (!/^\d{5}$/.test(v.plz)) m.push('PLZ (5 Ziffern)');
+  if (!v.city) m.push('Ort');
+  if (!Number.isInteger(v.trees) || v.trees < 1 || v.trees > 50) m.push('Anzahl Bäume (1–50)');
+  if (m.length) { $('#fMsg').textContent = 'Bitte prüfen: ' + m.join(', '); return; }
+  let o;
+  if (editId) {
+    o = find(editId); if (!o) return resetForm();
+    const ch = o.street !== v.street || o.plz !== v.plz || o.city !== v.city;
+    Object.assign(o, v); if (ch) { o.lat = null; o.lng = null; }
+  } else { o = {no:S.next++, ...v, status:'Vor Ort', driver:'', doneAt:null, lat:null, lng:null}; S.orders.push(o); }
+  S.last = {plz:v.plz, city:v.city};
+  const need = o.lat == null, wasEdit = !!editId;
+  resetForm(); afterPos(o);
+  toast(`Bestellung #${o.no} ${wasEdit ? 'aktualisiert' : 'gespeichert'}.`);
+  if (need) geoOrder(o);
+}
+function edit(no) {
+  const o = find(no); if (!o) return;
+  editId = no;
+  $('#fName').value = o.name; $('#fPhone').value = o.phone; $('#fTrees').value = o.trees; $('#fStreet').value = o.street;
+  $('#fPlz').value = o.plz; $('#fCity').value = o.city; $('#fDay').value = o.day; $('#fTime').value = o.time; $('#fNote').value = o.note;
+  $('#fTitle').textContent = `✎ Bestellung #${no} bearbeiten`; $('#fOk').textContent = 'Änderungen speichern'; $('#fCancel').hidden = false;
+  $('#dF').open = true; $('#dF').scrollIntoView({behavior:'smooth'});
+}
+function del(no) {
+  const o = find(no); if (!o || !confirm(`Bestellung #${no} (${o.name}) wirklich löschen?`)) return;
+  S.orders = S.orders.filter(x => x !== o); if (editId === no) resetForm();
+  const i = S.tour.ids.indexOf(no);
+  if (i >= 0) { S.tour.ids.splice(i, 1); save(); schedule(); } else { save(); render(); }
+}
+
+/* ========== Data: export / import / clear ========== */
+function exportData() {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(S, null, 2)], {type:'application/json'}));
+  a.download = 'weihnachtsbaeume-' + new Date().toISOString().slice(0, 10) + '.json';
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+async function importData(file) {
+  if (!file) return;
+  try {
+    const {s, dropped} = normalize(JSON.parse(await file.text()));
+    if (!confirm(`${s.orders.length} Bestellungen importieren${dropped ? ` (${dropped} ungültige übersprungen)` : ''}? Alle aktuellen Daten werden ersetzt.`)) return;
+    if (!s.start) s.start = S.start;
+    S = s; R = {geom:null, dashed:false, km:null, sec:null, msg:'', busy:false};
+    save(); resetForm(); $('#tRet').checked = S.tour.ret; $('#tDrv').value = S.tour.driver;
+    if (S.tour.ids.length) schedule(); else render();
+    toast('Import erfolgreich.');
+  } catch (e) { toast('Import fehlgeschlagen: ' + (e instanceof SyntaxError ? 'keine gültige JSON-Datei.' : e.message), true); }
+}
+function clearAll() {
+  if (!confirm('ALLE Bestellungen löschen? Der Startpunkt bleibt erhalten.')) return;
+  S.orders = []; S.next = 1; S.tour.ids = []; resetForm(); save(); R = {geom:null, dashed:false, km:null, sec:null, msg:'', busy:false}; render(); toast('Alle Bestellungen gelöscht.');
+}
+
+/* ========== Rendering ========== */
+const stOpts = cur => ST.map(k => `<option${k === cur ? ' selected' : ''}>${k}</option>`).join('');
+function render() { renderStats(); renderStart(); renderList(); renderTour(); renderMap(); }
+function renderStats() {
+  const c = {}; ST.forEach(k => { c[k] = 0; }); let open = 0;
+  S.orders.forEach(o => { c[o.status]++; if (o.status !== 'Ausgeliefert') open += o.trees; });
+  $('#stats').innerHTML = ST.map(k => `<span style="background:${COL[k]}">${k}: ${c[k]}</span>`).join('') + `<span style="background:#444">🌲 offen: ${open}</span>`;
+}
+function renderStart() {
+  $('#sInfo').innerHTML = S.start ? `✔ ${esc(S.start.label)} <span class="mut">(${S.start.lat.toFixed(4)}, ${S.start.lng.toFixed(4)})</span>` : '⚠ Noch kein Startpunkt gesetzt.';
+}
+function filtered() {
+  const q = $('#qSt').value, d = $('#qDay').value, t = $('#qTxt').value.trim().toLowerCase().replace(/^#/, '');
+  return S.orders.filter(o => (q === 'open' ? o.status !== 'Ausgeliefert' : q === 'all' || o.status === q) && (!d || o.day === d) &&
+    (!t || [o.no, o.name, o.street, o.plz, o.city, o.driver].join(' ').toLowerCase().includes(t)))
+    .sort((a, b) => ST.indexOf(a.status) - ST.indexOf(b.status) || a.no - b.no);
+}
+function renderList() {
+  const l = filtered();
+  $('#list').innerHTML = l.length ? l.map(o => {
+    const inT = S.tour.ids.includes(o.no), has = o.lat != null;
+    return `<div class="it" style="border-left:5px solid ${COL[o.status]}">
+<div class="top"><label class="ck"><input type="checkbox" data-chg="tour" data-no="${o.no}"${inT ? ' checked' : ''}${has && o.status !== 'Ausgeliefert' ? '' : ' disabled'}> <b>#${o.no} ${esc(o.name)}</b></label>
+<select data-chg="status" data-no="${o.no}">${stOpts(o.status)}</select></div>
+<div>${esc(o.street)}, ${esc(o.plz)} ${esc(o.city)}</div>
+<div class="mut">🌲 ${o.trees} · ${o.day}${o.time ? ' · ' + esc(o.time) : ''}${o.phone ? ` · <a href="tel:${esc(o.phone.replace(/[^\d+]/g, ''))}">${esc(o.phone)}</a>` : ''}${o.driver ? ' · 🚚 ' + esc(o.driver) : ''}${o.doneAt ? ' · ✔ ' + esc(fmtDT(o.doneAt)) : ''}</div>
+${o.note ? `<div class="mut">📝 ${esc(o.note)}</div>` : ''}
+${has ? '' : '<div class="err">⚠ Keine Position: bitte setzen.</div>'}
+<div class="row"><button class="s" data-act="edit" data-no="${o.no}">✎ Bearbeiten</button><button class="s d" data-act="del" data-no="${o.no}">🗑 Löschen</button>
+${has ? `<button class="s" data-act="show" data-no="${o.no}">🗺 Karte</button>` : `<button class="s" data-act="regeo" data-no="${o.no}">🔍 Neu suchen</button>`}
+<button class="s" data-act="pos" data-no="${o.no}">📍 Position setzen</button>
+<a class="s" href="${esc(navUrl(o))}" target="_blank" rel="noopener">🧭 Navi</a></div></div>`;
+  }).join('') : '<p class="mut">Keine Bestellungen für diesen Filter.</p>';
+}
+function renderTour() {
+  const st = stops(), n = S.tour.ids.length;
+  $('#tSum').innerHTML = `<b>${n}</b> Stopps · 🌲 <b>${st.reduce((a, o) => a + o.trees, 0)}</b>` +
+    (R.km != null ? ` · ${R.dashed ? '≈ ' : ''}<b>${R.km.toFixed(1)} km</b> · ${R.dashed ? '≈ ' : ''}<b>${fmtDur(R.sec)}</b>` : '') +
+    (R.busy ? ' · ⏳ berechne …' : '') + (R.msg ? `<div class="warn">${esc(R.msg)}</div>` : '');
+  const wp = S.tour.ret ? n : n - 1;
+  $('#tWarn').hidden = wp <= 9; $('#tWarn').textContent = `⚠ ${wp} Zwischenstopps: Google Maps erlaubt höchstens 9. Bitte die Tour aufteilen.`;
+  $('#tList').innerHTML = S.tour.ids.map((no, i) => {
+    const o = find(no); if (!o) return '';
+    return `<li><b>${esc(o.name)}</b> ${o.lat == null ? '<span class="err">⚠ keine Position</span> ' : ''}<span class="mut">🌲 ${o.trees}${o.time ? ' · ' + esc(o.time) : ''}</span><br>${esc(o.street)}, ${esc(o.city)}
+<div class="row"><button class="s" data-act="up" data-no="${no}"${i ? '' : ' disabled'}>▲</button><button class="s" data-act="down" data-no="${no}"${i < n - 1 ? '' : ' disabled'}>▼</button>
+<a class="s" href="${esc(navUrl(o))}" target="_blank" rel="noopener">🧭 Navi</a><button class="s p" data-act="done" data-no="${no}">✔ Geliefert</button><button class="s d" data-act="rm" data-no="${no}">✖</button></div></li>`;
+  }).join('');
+}
+function icon(o) {
+  const i = S.tour.ids.indexOf(o.no);
+  return L.divIcon({className:'', html:`<div class="mk${i >= 0 ? ' t' : ''}" style="background:${COL[o.status]}">${i >= 0 ? i + 1 : o.no}</div>`, iconSize:[28, 28], iconAnchor:[14, 14], popupAnchor:[0, -14]});
+}
+function popup(o) {
+  const inT = S.tour.ids.includes(o.no);
+  return `<b>#${o.no} ${esc(o.name)}</b><br>${esc(o.street)}<br>${esc(o.plz)} ${esc(o.city)}<br>🌲 ${o.trees} · ${o.day}${o.time ? ' · ' + esc(o.time) : ''}${o.note ? '<br>📝 ' + esc(o.note) : ''}
+<div class="pp"><select data-chg="status" data-no="${o.no}">${stOpts(o.status)}</select>
+${o.status === 'Ausgeliefert' ? '' : `<button class="s" data-act="ptour" data-no="${o.no}">${inT ? 'Aus Tour entfernen' : 'Zur Tour hinzufügen'}</button>`}
+<a href="${esc(navUrl(o))}" target="_blank" rel="noopener">🧭 Navigation</a></div>`;
+}
+function renderMap() {
+  if (!map) return;
+  gM.clearLayers(); gS.clearLayers(); gR.clearLayers(); MK = {};
+  if (S.start) L.marker([S.start.lat, S.start.lng], {icon:L.divIcon({className:'', html:'<div class="mk st">🏁</div>', iconSize:[32, 32], iconAnchor:[16, 16]}), zIndexOffset:1000})
+    .bindPopup(`<b>Verkaufsstand</b><br>${esc(S.start.label)}`).addTo(gS);
+  S.orders.forEach(o => { if (o.lat != null) MK[o.no] = L.marker([o.lat, o.lng], {icon:icon(o)}).bindPopup(popup(o)).addTo(gM); });
+  if (R.geom && R.geom.length > 1) L.polyline(R.geom, {color:'#1d4ed8', weight:5, opacity:.8, dashArray:R.dashed ? '8 10' : null}).addTo(gR);
+}
+
+/* ========== Events (delegated; capture phase because Leaflet stops click bubbling in popups) ========== */
+const ACT = {
+  sGeo:startGeo, sPick:() => setPick({t:'s'}), pcancel:() => setPick(null), cancel:resetForm,
+  edit, del, pos:no => setPick({t:'o', no}), regeo:no => { const o = find(no); if (o) geoOrder(o); },
+  show:no => { const o = find(no); if (map && o && o.lat != null) { map.setView([o.lat, o.lng], Math.max(map.getZoom(), 15)); if (MK[no]) MK[no].openPopup(); } },
+  opt:() => routeTour(true), tStart:tourStart, gm:openGm, share,
+  tClear:() => { S.tour.ids = []; save(); schedule(); },
+  up:no => move(no, -1), down:no => move(no, 1), rm:no => tourToggle(no, false), done:no => setStatus(no, 'Ausgeliefert'),
+  ptour:no => tourToggle(no, !S.tour.ids.includes(no)),
+  exp:exportData, imp:() => $('#impF').click(), clr:clearAll
+};
+const CHG = {status:(no, el) => setStatus(no, el.value), tour:(no, el) => tourToggle(no, el.checked)};
+document.addEventListener('click', e => {
+  const b = e.target.closest && e.target.closest('[data-act]'); if (!b || !ACT[b.dataset.act]) return;
+  try { ACT[b.dataset.act](Number(b.dataset.no), b); } catch (err) { console.error(err); toast('Unerwarteter Fehler: ' + err.message, true); }
+}, true);
+document.addEventListener('change', e => {
+  const el = e.target, k = el && el.dataset && el.dataset.chg; if (!k || !CHG[k]) return;
+  try { CHG[k](Number(el.dataset.no), el); } catch (err) { console.error(err); toast('Unerwarteter Fehler: ' + err.message, true); }
+}, true);
+$('#f').addEventListener('submit', submitOrder);
+$('#impF').addEventListener('change', e => { importData(e.target.files[0]); e.target.value = ''; });
+['#qSt', '#qDay'].forEach(s => $(s).addEventListener('change', renderList));
+$('#qTxt').addEventListener('input', renderList);
+$('#tDrv').addEventListener('input', e => { S.tour.driver = e.target.value; save(); });
+$('#tRet').addEventListener('change', e => { S.tour.ret = e.target.checked; save(); if (S.tour.ids.length) schedule(); else render(); });
+$('#sAddr').addEventListener('keydown', e => { if (e.key === 'Enter') startGeo(); });
+
+/* ========== Init ========== */
+$('#tRet').checked = S.tour.ret; $('#tDrv').value = S.tour.driver;
+resetForm(); render();
+if (S.tour.ids.length) schedule();
+</script>
+</body>
+</html>
